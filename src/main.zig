@@ -2,18 +2,54 @@ const std = @import("std");
 const net = std.net;
 const UUID = @import("uuid.zig").UUID;
 const mem = std.mem;
-
+const ServerCommands = enum(u16) {
+    CONNECT = 1,
+    DISCONNECT = 2,
+};
 const Client = struct {
+    allocator: mem.Allocator,
     addr: net.Ip4Address,
     name: [64]u8,
+    stream: net.Stream,
+    const Self = @This();
+
+    // !TODO
+    pub fn connect(self: *Self) !void() {
+        _ = self;
+    }
+    pub fn disconnect(self: *Self) !void {
+        try self.send_message("DISCONNECT");
+        self.stream.close();
+    }
+    pub fn send_message(self: *Self, content: []const u8) !void {
+        const message = try Message.create(self.allocator, content);
+
+        try self.stream.writeAll(message);
+    }
 };
 const Message = struct {
     content: []const u8,
     from: *Client,
-    created: usize, // The message sent to server by client
-    sent: usize, // The message delivered to all clients
+    created: isize, // The message sent to server by client
+    sent: ?isize, // The message delivered to all clients
     done: bool, // Message sending process is finished
     id: UUID, // Random message id
+    allocator: mem.Allocator,
+    const Self = @This();
+    pub fn create(allocator: mem.Allocator, content: []const u8) !*Message {
+        var self = try allocator.create(Message);
+        const now = std.time.timestamp(std.time.epoch.unix);
+        self.allocator = allocator;
+        self.content = content;
+        self.created = now;
+        self.done = false;
+        self.from = &Client;
+        self.sent = null;
+        return self;
+    }
+    pub fn deinit(self: *Self) void {
+        self.allocator.destroy(self);
+    }
 };
 const ServerConfig = struct {
     max_user: usize,
@@ -63,13 +99,9 @@ const Server = struct {
             // Implement threads
         }
     }
-    // Send message to a channel
-    pub fn send_message(self: *Self, message: []const u8, client: *Client) !void {
-        
-    }
     // Refuse connection for some reason
-    pub fn refuse_connection(self: *Self, message: []const u8, client: *Client) !void {
-        self.send_message()
+    pub fn refuse_connection(message: []const u8, client: *Client) !void {
+        try client.send_message(message);
     }
     pub fn approve_connection(self: *Self, client: *Client) !void {
         self.add_user(client);
