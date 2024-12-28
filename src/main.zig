@@ -11,19 +11,23 @@ const Client = struct {
     addr: net.Ip4Address,
     name: [64]u8,
     stream: net.Stream,
+    host_adress: []const u8,
+    host_port: u16,
+    connected: bool,
     const Self = @This();
 
-    // !TODO
-    pub fn connect(self: *Self) !void() {
-        _ = self;
+    pub fn connect(self: *Self) !void {
+        const stream = try std.net.tcpConnectToHost(self.allocator, self.host_adress, self.host_port);
+        self.stream = stream;
+        self.connected = true;
     }
     pub fn disconnect(self: *Self) !void {
         try self.send_message("DISCONNECT");
         self.stream.close();
+        self.connected = false;
     }
     pub fn send_message(self: *Self, content: []const u8) !void {
-        const message = try Message.create(self.allocator, content);
-
+        const message = try std.fmt.allocPrint(self.allocator, "MESSAGE {s}", .{content});
         try self.stream.writeAll(message);
     }
 };
@@ -67,6 +71,7 @@ const Server = struct {
     port: u16,
     config: ServerConfig,
     clients: std.ArrayList(*Client),
+    messages: std.ArrayList(*Message),
     const Self = @This();
     pub fn init(allocator: mem.Allocator, config: ?ServerConfig) !*Server {
         var self = try allocator.create(@This());
@@ -79,7 +84,10 @@ const Server = struct {
         // Init clients
         const clients = std.ArrayList(*Client).init(self.allocator);
         self.clients = clients;
-        return self;
+
+        // Init messages
+        const messages = std.ArrayList(*Message).init(self.allocator);
+        self.messages = messages;
     }
     pub fn mainloop_handler() void {
         mainloop() catch |err| {
@@ -115,4 +123,9 @@ const Server = struct {
         }
         try self.clients.append(client);
     }
+    pub fn get_incoming_message(self: *Self, content: []const u8) !void() {
+        const message = try Message.create(self.allocator, content);
+        self.messages.append(message);
+    }
+    pub fn broadcast_message() !void {}
 };
